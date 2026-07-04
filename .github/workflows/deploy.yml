@@ -1,0 +1,61 @@
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches:
+      - main # Change to your default branch if different
+  workflow_dispatch: # Allows manual trigger
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  SERVICE_NAME: jobsearch-api
+  REGION: europe-west4
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Container Registry
+        run: |
+          gcloud auth configure-docker
+
+      - name: Build and push Docker image
+        run: |
+          docker build -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}:${{ github.sha }} .
+          docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy ${{ env.SERVICE_NAME }} \
+            --image gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}:${{ github.sha }} \
+            --platform managed \
+            --region ${{ env.REGION }} \
+            --allow-unauthenticated \
+            --memory 2Gi \
+            --cpu 2 \
+            --timeout 300 \
+            --max-instances 10 \
+            --set-env-vars="PLAYWRIGHT_BROWSERS_PATH=/ms-playwright" \
+            --set-secrets="API_KEY=API_KEY:latest,GOOGLE_API_KEY=GOOGLE_API_KEY:latest,LINKEDIN_USERNAME=LINKEDIN_USERNAME:latest,LINKEDIN_PASSWORD=LINKEDIN_PASSWORD:latest,TAVILY_API_KEY=TAVILY_API_KEY:latest"
+
+      - name: Show deployment URL
+        run: |
+          gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --region ${{ env.REGION }} \
+            --format 'value(status.url)'

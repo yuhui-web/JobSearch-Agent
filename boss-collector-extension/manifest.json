@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "求职代理 BOSS 真实岗位采集器",
+  "version": "0.1.0",
+  "description": "在已打开的 BOSS 岗位列表页采集真实岗位和公司名，导入本地求职代理。",
+  "permissions": ["storage"],
+  "host_permissions": ["*://zhipin.com/*", "*://*.zhipin.com/*", "http://127.0.0.1:8010/*"],
+  "content_scripts": [
+    {
+      "matches": ["*://zhipin.com/*", "*://*.zhipin.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

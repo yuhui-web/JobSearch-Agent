@@ -1,0 +1,14 @@
+Name: Your Name
+Email: your-email@example.com
+
+Education:
+- Your university, major, graduation year
+
+Skills:
+- Python, JavaScript, SQL
+
+Projects:
+- Project name: short impact-oriented description
+
+Experience:
+- Role: short responsibility and result

@@ -1,0 +1,36 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Virtual environments
+.venv
+.env
+web/.env.local
+key.json
+browser-data/
+*.log
+
+# Runtime data and local job-search output
+output/
+jobs/*.db
+jobs/*.sqlite
+jobs/*.sqlite3
+*.db
+*.sqlite
+*.sqlite3
+
+# Browser extension packaging artifacts
+*.pem
+*.crx
+
+# Frontend dependencies and build output
+node_modules/
+web/node_modules/
+web/dist/
