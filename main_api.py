@@ -13,6 +13,8 @@ import asyncio
 import hashlib
 import re
 import base64
+import tempfile
+import threading
 from collections import Counter
 from io import BytesIO
 from datetime import datetime
@@ -102,15 +104,24 @@ async def verify_api_key(api_key: str = Depends(api_key_header)):
     return api_key
 
 
+def _parse_allowed_origins() -> List[str]:
+    raw_origins = os.getenv(
+        "ALLOWED_ORIGIN",
+        "http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:5174,http://localhost:5174",
+    )
+    origins = [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
+    if ENVIRONMENT in {"prod", "production"} and "*" in origins:
+        raise RuntimeError("Wildcard CORS origin is not allowed in production")
+    return origins or ["http://127.0.0.1:5173"]
+
+
 # Add CORS middleware for React frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        os.getenv("ALLOWED_ORIGIN", "*")  # Set specific domains in production
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_parse_allowed_origins(),
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "X-API-Key"],
 )
 
 # Make output directory available for downloading generated files
@@ -258,27 +269,43 @@ boss_monitor_state: Dict[str, Any] = {
 
 # Search history tracking
 search_history_file = os.path.join(output_dir, "search_history.json")
+search_history_lock = threading.RLock()
 
 
 def load_search_history() -> List[Dict[str, Any]]:
     """Load search history from file"""
-    if os.path.exists(search_history_file):
-        try:
-            with open(search_history_file, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception as e:
-            print(f"Error loading search history: {e}")
-            return []
+    with search_history_lock:
+        if os.path.exists(search_history_file):
+            try:
+                with open(search_history_file, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception as e:
+                print(f"Error loading search history: {e}")
+                return []
     return []
 
 
 def save_search_history(history: List[Dict[str, Any]]):
     """Save search history to file"""
-    try:
-        with open(search_history_file, "w", encoding="utf-8") as f:
-            json.dump(history, f, indent=2, ensure_ascii=False)
-    except Exception as e:
-        print(f"Error saving search history: {e}")
+    with search_history_lock:
+        tmp_path = None
+        try:
+            ensure_dir_exists(output_dir)
+            fd, tmp_path = tempfile.mkstemp(
+                prefix="search_history_",
+                suffix=".json",
+                dir=output_dir,
+            )
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(history, f, indent=2, ensure_ascii=False)
+            os.replace(tmp_path, search_history_file)
+        except Exception as e:
+            print(f"Error saving search history: {e}")
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
 
 
 def generate_search_hash(
@@ -338,43 +365,45 @@ def add_search_to_history(
     status: str = "started",
 ):
     """Add a search to history"""
-    history = load_search_history()
-    search_hash = generate_search_hash(
-        keywords, locations, job_type, experience_level, scrapers
-    )
+    with search_history_lock:
+        history = load_search_history()
+        search_hash = generate_search_hash(
+            keywords, locations, job_type, experience_level, scrapers
+        )
 
-    search_entry = {
-        "search_id": search_id,
-        "search_hash": search_hash,
-        "keywords": keywords,
-        "locations": locations,
-        "job_type": job_type,
-        "experience_level": experience_level,
-        "scrapers": scrapers,
-        "max_jobs": max_jobs,
-        "timestamp": datetime.now().isoformat(),
-        "status": status,
-    }
+        search_entry = {
+            "search_id": search_id,
+            "search_hash": search_hash,
+            "keywords": keywords,
+            "locations": locations,
+            "job_type": job_type,
+            "experience_level": experience_level,
+            "scrapers": scrapers,
+            "max_jobs": max_jobs,
+            "timestamp": datetime.now().isoformat(),
+            "status": status,
+        }
 
-    # Add to beginning of history (most recent first)
-    history.insert(0, search_entry)
+        # Add to beginning of history (most recent first)
+        history.insert(0, search_entry)
 
-    # Keep only last 50 searches
-    history = history[:50]
+        # Keep only last 50 searches
+        history = history[:50]
 
-    save_search_history(history)
+        save_search_history(history)
 
 
 def update_search_status(search_id: str, status: str, job_count: int = None):
     """Update search status in history"""
-    history = load_search_history()
-    for search in history:
-        if search.get("search_id") == search_id:
-            search["status"] = status
-            if job_count is not None:
-                search["job_count"] = job_count
-            break
-    save_search_history(history)
+    with search_history_lock:
+        history = load_search_history()
+        for search in history:
+            if search.get("search_id") == search_id:
+                search["status"] = status
+                if job_count is not None:
+                    search["job_count"] = job_count
+                break
+        save_search_history(history)
 
 
 def boss_monitor_snapshot() -> Dict[str, Any]:
@@ -612,16 +641,6 @@ def _job_matches_locations(job: Dict[str, Any], locations: List[str]) -> bool:
         return True
     job_location = _normalize_search_text(_job_location(job))
     return any(location in job_location or job_location in location for location in requested_locations)
-
-
-def _has_specific_district(locations: List[str]) -> bool:
-    return any(re.search(r"(区|县|旗|新区|开发区)", str(location or "")) for location in locations)
-
-
-def _filter_jobs_for_specific_location(jobs: List[Dict[str, Any]], locations: List[str]) -> List[Dict[str, Any]]:
-    if not _has_specific_district(locations):
-        return jobs
-    return [job for job in jobs if _job_matches_locations(job, locations)]
 
 
 def _has_specific_district(locations: List[str]) -> bool:
@@ -1072,6 +1091,8 @@ def load_recent_imported_jobs(
     strict_location: bool = False,
 ) -> List[Dict[str, Any]]:
     """Use recently imported real jobs as the first-class real source."""
+    max_age_seconds = int(os.getenv("RECENT_IMPORTED_JOB_MAX_AGE_SECONDS", "3600"))
+    now_ts = datetime.now().timestamp()
     imported_files = sorted(
         Path(output_dir).glob("job_import_*.json"),
         key=lambda path: path.stat().st_mtime,
@@ -1081,6 +1102,11 @@ def load_recent_imported_jobs(
     seen: set[tuple[str, str]] = set()
 
     for imported_file in imported_files:
+        try:
+            if max_age_seconds > 0 and now_ts - imported_file.stat().st_mtime > max_age_seconds:
+                continue
+        except OSError:
+            continue
         try:
             jobs = json.loads(imported_file.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
@@ -1176,16 +1202,6 @@ def build_fast_boss_candidates(
     from this path. If live sources are blocked or empty, the caller should show
     an honest empty/blocked state instead of filling the UI with fake results.
     """
-    imported_jobs = load_recent_imported_jobs(
-        keywords=keywords,
-        locations=locations,
-        max_jobs=max_jobs,
-        candidate_profile=candidate_profile,
-        strict_location=strict_location,
-    )
-    if imported_jobs:
-        return imported_jobs[:max_jobs]
-
     automation_enabled = is_boss_automation_enabled()
     live_jobs: List[Dict[str, Any]] = []
     if automation_enabled:
@@ -1215,8 +1231,18 @@ def build_fast_boss_candidates(
         if job.get("source") in {"boss", "web_search"}
         and JobDatabase.has_valid_job_identity(_job_title(job), _company_name(job))
     ]
-    jobs = [attach_company_map_url(job, (locations or ["武汉"])[0]) for job in jobs[:max_jobs]]
-    return _enrich_fast_candidates_with_analysis(jobs, candidate_profile)
+    if jobs:
+        jobs = [attach_company_map_url(job, (locations or ["武汉"])[0]) for job in jobs[:max_jobs]]
+        return _enrich_fast_candidates_with_analysis(jobs, candidate_profile)
+
+    imported_jobs = load_recent_imported_jobs(
+        keywords=keywords,
+        locations=locations,
+        max_jobs=max_jobs,
+        candidate_profile=candidate_profile,
+        strict_location=True,
+    )
+    return imported_jobs[:max_jobs]
 
 
 def build_legacy_candidate_jobs(
@@ -1292,6 +1318,16 @@ def build_legacy_candidate_jobs(
 @app.get("/")
 async def root():
     return {"message": "JobSearch API is running. Access /docs for API documentation."}
+
+
+@app.get("/health")
+async def health_check():
+    """Lightweight unauthenticated health check for deployment probes."""
+    return {
+        "status": "ok",
+        "service": "jobsearch-agent",
+        "environment": ENVIRONMENT,
+    }
 
 
 @app.get("/imports/boss-collector.js")

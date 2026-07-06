@@ -193,6 +193,7 @@ class JobSearchPipeline:
                                     feedback = self.db.add_job_with_immediate_feedback(job_details)
                                     if feedback["success"]:
                                         successful_saves += 1
+                                        location_results.append(job_details)
                                         print(f"    💾 {feedback['message']} ({feedback['duration_ms']}ms)")
                                     else:
                                         print(f"    ⚠️  {feedback['message']} ({feedback['duration_ms']}ms)")
@@ -216,11 +217,6 @@ class JobSearchPipeline:
                     
                     # Print summary for this location
                     print(f"  [SUMMARY] Location {location}: {successful_saves} saved, {skipped_existing} skipped, {failed_scrapes} failed")
-                    
-                    # For reporting purposes, create fake result entries for saved jobs
-                    if self.db and successful_saves > 0:
-                        # Add placeholder results to represent saved jobs
-                        location_results = [{"saved": True}] * successful_saves
                     
                     all_results.extend(location_results)
                     print(f"  [SUCCESS] Found {len(location_results)} jobs in {location}")
@@ -368,6 +364,7 @@ class JobSearchPipeline:
                                     feedback = self.db.add_job_with_immediate_feedback(job_details)
                                     if feedback["success"]:
                                         successful_saves += 1
+                                        location_results.append(job_details)
                                         print(f"    💾 {feedback['message']} ({feedback['duration_ms']}ms)")
                                     else:
                                         print(f"    ⚠️  {feedback['message']} ({feedback['duration_ms']}ms)")
@@ -394,11 +391,6 @@ class JobSearchPipeline:
                     
                     # Print summary for this location
                     print(f"  [SUMMARY] Location {location}: {successful_saves} saved, {skipped_existing} skipped, {failed_scrapes} failed")
-                    
-                    # For reporting purposes, create fake result entries for saved jobs
-                    if self.db and successful_saves > 0:
-                        # Add placeholder results to represent saved jobs
-                        location_results = [{"saved": True}] * successful_saves
                     
                     all_results.extend(location_results)
                     print(f"  [SUCCESS] Found {len(location_results)} jobs in {location}")

@@ -1,19 +1,19 @@
-# BOSS Job Collector Extension
+# BOSS 真实岗位采集器
 
-This Chrome/Chromium extension collects visible job cards from an already-open BOSS Zhipin search page and imports them into the local JobSearch Agent API.
+这个扩展用于把当前 BOSS 页面里真实显示的岗位和公司名导入到本地求职代理。
 
-## Install
+## 安装
 
-1. Open `chrome://extensions/`.
-2. Enable Developer mode.
-3. Click `Load unpacked`.
-4. Select this `boss-collector-extension` directory.
+1. 打开 Chrome 地址栏输入 `chrome://extensions/`。
+2. 打开右上角“开发者模式”。
+3. 点击“加载已解压的扩展程序”。
+4. 选择本项目里的 `boss-collector-extension` 目录。
 
-## Use
+## 使用
 
-1. Start the local backend and make sure `http://127.0.0.1:8011` is reachable.
-2. Open BOSS Zhipin and search for a role/city manually.
-3. The import widget appears in the page corner.
-4. Click import to send the currently visible real job cards to JobSearch Agent.
+1. 先启动本项目后端，确保 `http://127.0.0.1:8011` 可访问。
+2. 打开 BOSS 岗位搜索结果页，先手动搜索岗位和城市。
+3. 页面右下角会出现“导入到求职代理”。
+4. 点击后，当前页面真实岗位会导入到求职代理的“最近搜索岗位”。
 
-The extension does not bypass platform security checks. If BOSS asks for verification, complete it manually first.
+注意：如果 BOSS 显示安全验证，需要先人工完成验证；扩展不会绕过平台安全机制。

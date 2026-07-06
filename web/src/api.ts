@@ -242,14 +242,30 @@ function buildUrl(path: string) {
   return `${API_BASE_URL}${path}`;
 }
 
+type ApiRequestConfig = {
+  params?: Record<string, unknown>;
+  responseType?: 'text';
+  headers?: Record<string, string>;
+};
+
+function withAuth(config: ApiRequestConfig = {}) {
+  return {
+    ...config,
+    headers: {
+      ...config.headers,
+      'X-API-Key': API_KEY
+    }
+  };
+}
+
 export async function fetchInterviewLogs(
   params: FetchInterviewLogsParams = {}
 ): Promise<InterviewLogListResult> {
   const response = await axios.get<ApiEnvelope<InterviewLog[]>>(
     buildUrl('/interview-logs'),
-    {
+    withAuth({
       params
-    }
+    })
   );
   const { data, count } = response.data;
 
@@ -261,7 +277,8 @@ export async function fetchInterviewLogs(
 
 export async function fetchInterviewStats(): Promise<InterviewLogStats> {
   const response = await axios.get<ApiEnvelope<InterviewLogStats>>(
-    buildUrl('/interview-logs/stats')
+    buildUrl('/interview-logs/stats'),
+    withAuth()
   );
 
   return response.data.data;
@@ -272,7 +289,8 @@ export async function createInterviewLog(
 ): Promise<CreateInterviewLogResult> {
   const response = await axios.post<ApiEnvelope<InterviewLog>>(
     buildUrl('/interview-logs'),
-    payload
+    payload,
+    withAuth()
   );
 
   return response.data.data;
@@ -284,11 +302,7 @@ export async function startJobSearch(
   const response = await axios.post<JobSearchStartResult>(
     buildUrl('/search'),
     payload,
-    {
-      headers: {
-        'X-API-Key': API_KEY
-      }
-    }
+    withAuth()
   );
 
   return response.data;
@@ -299,7 +313,8 @@ export async function importJobs(
 ): Promise<JobSearchStartResult> {
   const response = await axios.post<JobSearchStartResult>(
     buildUrl('/imports/jobs'),
-    payload
+    payload,
+    withAuth()
   );
 
   return response.data;
@@ -308,7 +323,7 @@ export async function importJobs(
 export async function fetchBossCollectorScript(): Promise<string> {
   const response = await axios.get<string>(
     buildUrl('/imports/boss-collector.js'),
-    { responseType: 'text' }
+    withAuth({ responseType: 'text' })
   );
 
   return response.data;
@@ -316,7 +331,8 @@ export async function fetchBossCollectorScript(): Promise<string> {
 
 export async function fetchBossMonitorStatus(): Promise<BossMonitorStatus> {
   const response = await axios.get<BossMonitorStatus>(
-    buildUrl('/boss/monitor/status')
+    buildUrl('/boss/monitor/status'),
+    withAuth()
   );
 
   return response.data;
@@ -328,11 +344,7 @@ export async function startBossMonitor(
   const response = await axios.post<BossMonitorStatus>(
     buildUrl('/boss/monitor/start'),
     payload,
-    {
-      headers: {
-        'X-API-Key': API_KEY
-      }
-    }
+    withAuth()
   );
 
   return response.data;
@@ -342,11 +354,7 @@ export async function stopBossMonitor(): Promise<BossMonitorStatus> {
   const response = await axios.post<BossMonitorStatus>(
     buildUrl('/boss/monitor/stop'),
     {},
-    {
-      headers: {
-        'X-API-Key': API_KEY
-      }
-    }
+    withAuth()
   );
 
   return response.data;
@@ -357,9 +365,9 @@ export async function fetchSearchHistory(
 ): Promise<SearchHistoryItem[]> {
   const response = await axios.get<{ searches: SearchHistoryItem[] }>(
     buildUrl('/search/history'),
-    {
+    withAuth({
       params
-    }
+    })
   );
 
   return response.data.searches;
@@ -369,7 +377,8 @@ export async function fetchSearchResults(
   searchId: string
 ): Promise<SearchResultJob[]> {
   const response = await axios.get<SearchResultJob[]>(
-    buildUrl(`/search/${searchId}`)
+    buildUrl(`/search/${searchId}`),
+    withAuth()
   );
 
   return Array.isArray(response.data) ? response.data : [];
@@ -377,7 +386,8 @@ export async function fetchSearchResults(
 
 export async function deleteSearchHistory(searchId: string): Promise<DeleteSearchHistoryResult> {
   const response = await axios.delete<DeleteSearchHistoryResult>(
-    buildUrl(`/search/history/${searchId}`)
+    buildUrl(`/search/history/${searchId}`),
+    withAuth()
   );
 
   return response.data;
@@ -385,7 +395,8 @@ export async function deleteSearchHistory(searchId: string): Promise<DeleteSearc
 
 export async function clearSearchHistory(): Promise<DeleteSearchHistoryResult> {
   const response = await axios.delete<DeleteSearchHistoryResult>(
-    buildUrl('/search/history')
+    buildUrl('/search/history'),
+    withAuth()
   );
 
   return response.data;
@@ -396,7 +407,8 @@ export async function analyzeBossText(
 ): Promise<SearchResultJob> {
   const response = await axios.post<ApiEnvelope<SearchResultJob>>(
     buildUrl('/boss/analyze-text'),
-    payload
+    payload,
+    withAuth()
   );
 
   return response.data.data;
@@ -407,7 +419,8 @@ export async function analyzeCareerFit(
 ): Promise<CareerAnalyzeResult> {
   const response = await axios.post<ApiEnvelope<CareerAnalyzeResult>>(
     buildUrl('/career/analyze'),
-    payload
+    payload,
+    withAuth()
   );
 
   return response.data.data;
@@ -430,7 +443,8 @@ export async function extractResumeText(file: File): Promise<string> {
     {
       file_name: file.name,
       content_base64: arrayBufferToBase64(await file.arrayBuffer())
-    }
+    },
+    withAuth()
   );
 
   return response.data.data.text;

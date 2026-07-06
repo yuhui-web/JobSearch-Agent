@@ -121,8 +121,8 @@ class JobDatabase:
             return False
         return self.has_valid_job_identity(row["job_title"], row["company_name"])
 
-    def add_job(self, job: Dict[str, Any], max_retries: int = 3) -> bool:
-        """Add a job to the database with retries and better error handling"""
+    def add_job_status(self, job: Dict[str, Any], max_retries: int = 3) -> str:
+        """Add a job and return inserted, duplicate, invalid, or failed."""
         # Extract required fields with multiple possible field names
         job_title = (job.get("job_title") or 
                     job.get("title") or 
@@ -134,11 +134,11 @@ class JobDatabase:
         
         if not self.has_valid_job_identity(job_title, company_name):
             print(f"[SKIP] Missing valid job identity: job_title={job_title}, company_name={company_name}")
-            return False
+            return "invalid"
 
         if not job_title or not company_name:
             print(f"❌ Missing required fields: job_title={job_title}, company_name={company_name}")
-            return False
+            return "invalid"
             
         # Check if job already exists to avoid unnecessary database operations
         source_url = (job.get("source_url") or 
@@ -148,10 +148,10 @@ class JobDatabase:
         
         if source_url and self.job_exists(source_url=source_url):
             print(f"⏭️  Job already exists: {job_title} at {company_name}")
-            return True  # Return True since the job is already in database
+            return "duplicate"
         elif not source_url and self.job_exists(job_title=job_title, company_name=company_name):
             print(f"⏭️  Job already exists: {job_title} at {company_name}")
-            return True
+            return "duplicate"
             
         # Convert complex fields to JSON strings
         def to_json_str(field):
@@ -225,16 +225,16 @@ class JobDatabase:
                         }),
                         to_json_str(job.get("hiring_team")),
                         to_json_str(job.get("related_jobs"))
-                    ))
+                ))
                 
                 print(f"✅ Successfully added job: {job_title} at {company_name}")
-                return True
+                return "inserted"
                 
             except sqlite3.IntegrityError as e:
                 # Duplicate job - this is fine
                 if "UNIQUE constraint failed" in str(e):
                     print(f"⏭️  Job already exists (duplicate detected): {job_title} at {company_name}")
-                    return True
+                    return "duplicate"
                 else:
                     print(f"❌ Integrity error adding job (attempt {attempt + 1}/{max_retries}): {e}")
                     
@@ -252,7 +252,11 @@ class JobDatabase:
                     continue
         
         print(f"❌ Failed to add job after {max_retries} attempts: {job_title} at {company_name}")
-        return False
+        return "failed"
+
+    def add_job(self, job: Dict[str, Any], max_retries: int = 3) -> bool:
+        """Add a job to the database with bool-compatible result."""
+        return self.add_job_status(job, max_retries=max_retries) in {"inserted", "duplicate"}
 
     def add_job_with_immediate_feedback(self, job: Dict[str, Any]) -> Dict[str, Any]:
         """Add a job and return detailed feedback about the operation"""
@@ -270,18 +274,17 @@ class JobDatabase:
             "action": "unknown"
         }
         
-        success = self.add_job(job)
+        status = self.add_job_status(job)
         
-        result["success"] = success
+        result["success"] = status in {"inserted", "duplicate"}
         result["duration_ms"] = int((time.time() - start_time) * 1000)
         
-        if success:
-            if self.job_exists(job.get("source_url"), job_title, company_name):
-                result["action"] = "added_to_database"
-                result["message"] = f"Successfully added {job_title} at {company_name}"
-            else:
-                result["action"] = "already_existed"
-                result["message"] = f"Job already existed: {job_title} at {company_name}"
+        if status == "inserted":
+            result["action"] = "added_to_database"
+            result["message"] = f"Successfully added {job_title} at {company_name}"
+        elif status == "duplicate":
+            result["action"] = "already_existed"
+            result["message"] = f"Job already existed: {job_title} at {company_name}"
         else:
             result["action"] = "failed"
             result["message"] = f"Failed to add {job_title} at {company_name}"

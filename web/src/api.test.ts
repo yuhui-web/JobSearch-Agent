@@ -3,6 +3,7 @@ import { describe, expect, test, vi } from 'vitest';
 
 import {
   API_BASE_URL,
+  API_KEY,
   createInterviewLog,
   clearSearchHistory,
   deleteSearchHistory,
@@ -12,6 +13,9 @@ import {
   fetchInterviewStats,
   fetchBossCollectorScript,
   importJobs,
+  analyzeBossText,
+  analyzeCareerFit,
+  extractResumeText,
   fetchBossMonitorStatus,
   startBossMonitor,
   stopBossMonitor,
@@ -23,6 +27,11 @@ vi.mock('axios');
 const mockedAxiosGet = vi.mocked(axios.get);
 const mockedAxiosPost = vi.mocked(axios.post);
 const mockedAxiosDelete = vi.mocked(axios.delete);
+const authHeaders = {
+  headers: {
+    'X-API-Key': API_KEY
+  }
+};
 
 describe('interview log api helpers', () => {
   beforeEach(() => {
@@ -66,7 +75,8 @@ describe('interview log api helpers', () => {
         params: {
           company_name: 'Example',
           limit: 25
-        }
+        },
+        ...authHeaders
       }
     );
   });
@@ -107,7 +117,8 @@ describe('interview log api helpers', () => {
 
     expect(mockedAxiosGet).toHaveBeenCalledTimes(1);
     expect(mockedAxiosGet).toHaveBeenCalledWith(
-      `${API_BASE_URL}/interview-logs/stats`
+      `${API_BASE_URL}/interview-logs/stats`,
+      authHeaders
     );
   });
 
@@ -139,7 +150,8 @@ describe('interview log api helpers', () => {
     expect(mockedAxiosPost).toHaveBeenCalledTimes(1);
     expect(mockedAxiosPost).toHaveBeenCalledWith(
       `${API_BASE_URL}/interview-logs`,
-      payload
+      payload,
+      authHeaders
     );
   });
 });
@@ -174,11 +186,7 @@ describe('job search api helpers', () => {
     expect(mockedAxiosPost).toHaveBeenCalledWith(
       `${API_BASE_URL}/search`,
       payload,
-      {
-        headers: {
-          'X-API-Key': 'your-secret-api-key-change-this'
-        }
-      }
+      authHeaders
     );
   });
 
@@ -220,9 +228,70 @@ describe('job search api helpers', () => {
       {
         params: {
           limit: 5
-        }
+        },
+        ...authHeaders
       }
     );
+  });
+
+  test('protected helpers attach api key auth headers consistently', async () => {
+    mockedAxiosGet
+      .mockResolvedValueOnce({ data: { searches: [] } })
+      .mockResolvedValueOnce({ data: [] });
+    mockedAxiosPost
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            job_title: 'Python Intern',
+            company_name: 'Example AI'
+          }
+        }
+      })
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            summary: 'match'
+          }
+        }
+      })
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            text: 'resume text'
+          }
+        }
+      });
+
+    await fetchSearchHistory();
+    await fetchSearchResults('job_search_20260706_120000');
+    await analyzeBossText({ job_text: 'Python Intern at Example AI' });
+    await analyzeCareerFit({
+      candidate_profile: 'Python FastAPI',
+      target_role: 'Python Intern'
+    });
+    await extractResumeText({
+      name: 'resume.txt',
+      arrayBuffer: () => Promise.resolve(new TextEncoder().encode('resume').buffer)
+    } as File);
+
+    for (const call of mockedAxiosGet.mock.calls) {
+      expect(call[1]).toMatchObject({
+        headers: {
+          'X-API-Key': API_KEY
+        }
+      });
+    }
+
+    for (const call of mockedAxiosPost.mock.calls) {
+      expect(call[2]).toMatchObject({
+        headers: {
+          'X-API-Key': API_KEY
+        }
+      });
+    }
   });
 
   test('fetchSearchResults requests jobs for a search id', async () => {
@@ -251,7 +320,8 @@ describe('job search api helpers', () => {
     ]);
 
     expect(mockedAxiosGet).toHaveBeenCalledWith(
-      `${API_BASE_URL}/search/job_search_20260629_120000`
+      `${API_BASE_URL}/search/job_search_20260629_120000`,
+      authHeaders
     );
   });
 
@@ -271,7 +341,8 @@ describe('job search api helpers', () => {
     });
 
     expect(mockedAxiosDelete).toHaveBeenCalledWith(
-      `${API_BASE_URL}/search/history/job_search_20260629_120000`
+      `${API_BASE_URL}/search/history/job_search_20260629_120000`,
+      authHeaders
     );
   });
 
@@ -291,7 +362,8 @@ describe('job search api helpers', () => {
     });
 
     expect(mockedAxiosDelete).toHaveBeenCalledWith(
-      `${API_BASE_URL}/search/history`
+      `${API_BASE_URL}/search/history`,
+      authHeaders
     );
   });
 
@@ -330,7 +402,8 @@ describe('job search api helpers', () => {
 
     expect(mockedAxiosPost).toHaveBeenCalledWith(
       `${API_BASE_URL}/imports/jobs`,
-      payload
+      payload,
+      authHeaders
     );
   });
 
@@ -343,7 +416,10 @@ describe('job search api helpers', () => {
 
     expect(mockedAxiosGet).toHaveBeenCalledWith(
       `${API_BASE_URL}/imports/boss-collector.js`,
-      { responseType: 'text' }
+      {
+        responseType: 'text',
+        ...authHeaders
+      }
     );
   });
 
@@ -380,7 +456,10 @@ describe('job search api helpers', () => {
       last_error: null
     });
 
-    expect(mockedAxiosGet).toHaveBeenCalledWith(`${API_BASE_URL}/boss/monitor/status`);
+    expect(mockedAxiosGet).toHaveBeenCalledWith(
+      `${API_BASE_URL}/boss/monitor/status`,
+      authHeaders
+    );
   });
 
   test('startBossMonitor starts monitoring with api key auth', async () => {
@@ -413,11 +492,7 @@ describe('job search api helpers', () => {
     expect(mockedAxiosPost).toHaveBeenCalledWith(
       `${API_BASE_URL}/boss/monitor/start`,
       payload,
-      {
-        headers: {
-          'X-API-Key': 'your-secret-api-key-change-this'
-        }
-      }
+      authHeaders
     );
   });
 
@@ -447,11 +522,7 @@ describe('job search api helpers', () => {
     expect(mockedAxiosPost).toHaveBeenCalledWith(
       `${API_BASE_URL}/boss/monitor/stop`,
       {},
-      {
-        headers: {
-          'X-API-Key': 'your-secret-api-key-change-this'
-        }
-      }
+      authHeaders
     );
   });
 });

@@ -1,324 +1,212 @@
-# API Documentation
+# JobSearch-Agent API
 
-The JobSearch Agent provides a REST API for integrating with external applications like React web apps. The API is built on a unified pipeline architecture that supports both synchronous and asynchronous job search operations.
+This document describes the current FastAPI surface used by the React console and BOSS import helper.
 
-## Pipeline Architecture
+## Server
 
-The API uses a **unified job search pipeline** (`src/utils/job_search_pipeline.py`) that provides:
-
-- **Sync Mode**: For CLI tools and standalone scripts
-- **Async Mode**: For FastAPI server and real-time web services  
-- **Database Integration**: SQLite storage with automatic deduplication
-- **Export Flexibility**: JSON output and database export options
-
-## Getting Started
-
-### Start the Server
+Recommended backend entrypoint:
 
 ```bash
-python main_api.py
+uvicorn main_api:app --host 127.0.0.1 --port 8011 --reload
 ```
 
-The server runs on `http://localhost:8000` by default.
+Interactive docs:
 
-### Interactive Documentation
-
-- **Swagger UI**: http://localhost:8000/docs
-- **ReDoc**: http://localhost:8000/redoc
-
-## Architecture Benefits
-
-The unified pipeline architecture provides:
-- **Consistent behavior** between CLI and API modes
-- **No code duplication** - single source of truth
-- **Automatic deduplication** - prevents duplicate job entries
-- **Database-first approach** - persistent storage with optional JSON export
-- **Real-time updates** - WebSocket support for live progress tracking
+- Swagger UI: `http://127.0.0.1:8011/docs`
+- ReDoc: `http://127.0.0.1:8011/redoc`
+- Health check: `http://127.0.0.1:8011/health`
 
 ## Authentication
 
-Currently, the API uses basic authentication for LinkedIn credentials through environment variables. Future versions will include API key authentication.
+Most product APIs use `X-API-Key`.
 
-## Endpoints
+Development default:
 
-### Job Search
+```env
+ENVIRONMENT=development
+API_KEY=dev-local-only-change-me
+ALLOWED_ORIGIN=http://127.0.0.1:5173
+```
 
-#### Start Job Search
+Production must set a strong `API_KEY`. The backend refuses to start in production with the development key.
+
+Frontend requests should use:
+
+```env
+VITE_API_BASE_URL=http://127.0.0.1:8011
+VITE_API_KEY=dev-local-only-change-me
+```
+
+## Health
+
+```http
+GET /health
+```
+
+Response:
+
+```json
+{
+  "status": "ok",
+  "service": "jobsearch-agent",
+  "environment": "development"
+}
+```
+
+## Job Search
 
 ```http
 POST /search
+X-API-Key: <api-key>
 ```
 
-**Request Body:**
+Request:
+
 ```json
 {
-  "keywords": "Software Engineer",
-  "location": "Berlin",
-  "max_jobs": 10,
-  "max_pages": 2,
-  "use_login": true
+  "keywords": "python agent intern",
+  "locations": ["Wuhan"],
+  "job_type": "internship",
+  "experience_level": "entry-level",
+  "max_jobs": 5,
+  "scrapers": ["boss"],
+  "candidate_profile": "Python, FastAPI, MySQL"
 }
 ```
 
-**Response:**
+Response:
+
 ```json
 {
-  "search_id": "job_search_20250611_143052",
+  "search_id": "job_search_20260706_120000",
   "status": "Job search started",
-  "estimated_completion": "2024-01-15T10:30:00Z"
+  "job_count": 3
 }
 ```
 
-#### Get Search Results
+Get search results:
 
 ```http
 GET /search/{search_id}
+X-API-Key: <api-key>
 ```
 
-**Response:**
+## Search History
+
+```http
+GET /search/history?limit=20
+X-API-Key: <api-key>
+```
+
+```http
+DELETE /search/history/{search_id}
+X-API-Key: <api-key>
+```
+
+```http
+DELETE /search/history
+X-API-Key: <api-key>
+```
+
+Search history is stored in `output/search_history.json` with locked atomic writes.
+
+## BOSS Page Import
+
+The project treats BOSS as a browser-side capture source, not a stable public API.
+
+Import visible jobs from a logged-in BOSS page:
+
+```http
+POST /imports/jobs
+X-API-Key: <api-key>
+```
+
+Request:
+
 ```json
 {
-  "search_id": "job_search_20250611_143052",
-  "status": "completed",
-  "total_jobs": 15,
+  "keywords": "python",
+  "locations": ["Wuhan Jiangxia"],
+  "job_type": "internship",
+  "experience_level": "entry-level",
+  "max_jobs": 15,
+  "candidate_profile": "Python FastAPI MySQL",
   "jobs": [
     {
-      "url": "https://www.linkedin.com/jobs/view/...",
-      "title": "Senior Software Engineer",
-      "company": "TechCorp Inc",
-      "location": "Berlin, Germany",
-      "description": "Full job description...",
-      "date_posted": "1 week ago",
-      "job_insights": ["Remote", "Full-time", "Mid-Senior level"],
-      "easy_apply": false,
-      "apply_info": "https://techcorp.com/careers/apply/...",
-      "company_info": "About the company...",
-      "hiring_team": [...],
-      "related_jobs": [...]
+      "name": "Python Intern",
+      "company": "Example AI",
+      "location": "Wuhan Jiangxia",
+      "salary": "150-200/day",
+      "link": "https://www.zhipin.com/job_detail/example.html"
     }
   ]
 }
 ```
 
-### Job Processing
-
-#### Parse Job Description
+Fetch page-side collector script:
 
 ```http
-POST /parse
+GET /imports/boss-collector.js
+X-API-Key: <api-key>
 ```
 
-**Request Body:**
-```json
-{
-  "text": "Job description text content...",
-  "file_content": null
-}
-```
-
-**Response:**
-```json
-{
-  "title": "Software Engineer",
-  "company": "TechCorp",
-  "location": "Berlin",
-  "requirements": ["Python", "Django", "PostgreSQL"],
-  "experience_level": "Mid-Senior",
-  "salary_range": "€60,000 - €80,000",
-  "job_type": "Full-time",
-  "remote_option": true
-}
-```
-
-#### Generate CV/Cover Letter
+## BOSS Monitor
 
 ```http
-POST /process
+GET /boss/monitor/status
+X-API-Key: <api-key>
 ```
-
-**Request Body:**
-```json
-{
-  "job_data": {
-    "title": "Software Engineer",
-    "company": "TechCorp",
-    "requirements": ["Python", "Django"],
-    "description": "Full job description..."
-  },
-  "generate_cv": true,
-  "generate_cover_letter": false,
-  "base_cv_path": "data/base_cv.docx"
-}
-```
-
-**Response:**
-```json
-{
-  "process_id": "process_20250611_143052",
-  "status": "Job processing started"
-}
-```
-
-#### Get Processing Results
 
 ```http
-GET /process/{process_id}
+POST /boss/monitor/start
+X-API-Key: <api-key>
 ```
 
-**Response:**
-```json
-{
-  "process_id": "process_20250611_143052",
-  "status": "completed",
-  "cv_path": "output/cvs/cv_tailored_techcorp_20250611.pdf",
-  "cover_letter_path": null,
-  "processing_time": "45.2 seconds"
-}
+```http
+POST /boss/monitor/stop
+X-API-Key: <api-key>
 ```
 
-## WebSocket API
+The monitor reuses the search/import pipeline and pushes new monitor searches into recent search history.
 
-For real-time updates during long-running operations:
+## Resume And Career Analysis
 
-```javascript
-const ws = new WebSocket('ws://localhost:8000/ws');
+Extract resume text:
 
-ws.onmessage = function(event) {
-    const data = JSON.parse(event.data);
-    console.log('Progress update:', data);
-};
-
-// Send search request
-ws.send(JSON.stringify({
-    type: 'search',
-    keywords: 'Software Engineer',
-    location: 'Berlin'
-}));
+```http
+POST /resume/extract
+X-API-Key: <api-key>
 ```
 
-## Error Handling
+Analyze one BOSS text block:
 
-All endpoints return standardized error responses:
-
-```json
-{
-  "error": "invalid_request",
-  "message": "Missing required field: keywords",
-  "details": {
-    "field": "keywords",
-    "code": "FIELD_REQUIRED"
-  }
-}
+```http
+POST /boss/analyze-text
+X-API-Key: <api-key>
 ```
 
-### Common Error Codes
+Analyze career fit:
 
-- `400 Bad Request`: Invalid request parameters
-- `401 Unauthorized`: Missing or invalid authentication
-- `404 Not Found`: Resource not found
-- `429 Too Many Requests`: Rate limit exceeded
-- `500 Internal Server Error`: Server error
-
-## Rate Limits
-
-- **Job Search**: 10 requests per minute
-- **Job Processing**: 5 requests per minute
-- **Parse Requests**: 20 requests per minute
-
-## React Integration Example
-
-```jsx
-import React, { useState, useEffect } from 'react';
-
-function JobSearch() {
-  const [jobs, setJobs] = useState([]);
-  const [loading, setLoading] = useState(false);
-
-  const searchJobs = async (keywords, location) => {
-    setLoading(true);
-    
-    // Start search
-    const searchResponse = await fetch('/api/search', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ keywords, location, max_jobs: 20 })
-    });
-    
-    const { search_id } = await searchResponse.json();
-    
-    // Poll for results
-    const pollResults = async () => {
-      const resultResponse = await fetch(`/api/search/${search_id}`);
-      const data = await resultResponse.json();
-      
-      if (data.status === 'completed') {
-        setJobs(data.jobs);
-        setLoading(false);
-      } else {
-        setTimeout(pollResults, 2000);
-      }
-    };
-    
-    pollResults();
-  };
-
-  return (
-    <div>
-      {loading ? (
-        <div>Searching for jobs...</div>
-      ) : (
-        <div>
-          {jobs.map(job => (
-            <div key={job.url}>
-              <h3>{job.title}</h3>
-              <p>{job.company} - {job.location}</p>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
+```http
+POST /career/analyze
+X-API-Key: <api-key>
 ```
 
-## Configuration
+## Interview Logs
 
-### Environment Variables
-
-```env
-# API Configuration
-API_HOST=localhost
-API_PORT=8000
-API_DEBUG=false
-
-# LinkedIn Credentials
-LINKEDIN_USERNAME=your_email@example.com
-LINKEDIN_PASSWORD=your_password
-
-# Rate Limiting
-SEARCH_RATE_LIMIT=10
-PROCESS_RATE_LIMIT=5
-PARSE_RATE_LIMIT=20
+```http
+GET /interview-logs
+X-API-Key: <api-key>
 ```
 
-### API Settings
-
-Configure in `config/api_config.yaml`:
-
-```yaml
-api:
-  host: "0.0.0.0"
-  port: 8000
-  debug: false
-  cors_origins: ["http://localhost:3000"]
-  
-rate_limits:
-  search: 10  # per minute
-  process: 5  # per minute
-  parse: 20   # per minute
-
-scraper:
-  default_timeout: 30
-  max_retries: 3
-  headless: true
+```http
+POST /interview-logs
+X-API-Key: <api-key>
 ```
+
+```http
+GET /interview-logs/stats
+X-API-Key: <api-key>
+```
+
+Use this module to record rejection reasons, follow-up actions, and interview learning loops.
